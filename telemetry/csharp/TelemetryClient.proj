@@ -5,6 +5,8 @@
 
         <BuildTemp>$(BuildRoot)buildtemp\</BuildTemp>
         <DotNetSdkTag>3.7.354.0</DotNetSdkTag>
+        <!-- Commit SHA pinning for supply chain integrity - corresponds to tag 3.7.354.0 -->
+        <DotNetSdkCommitSha>ee400ef82517202da998e93e40e4de53f77e4163</DotNetSdkCommitSha>
         <DotNetSdkClone>$(BuildTemp)dotnetsdk\</DotNetSdkClone>
         <SdkGeneratorRoot>$(DotNetSdkClone)generator\</SdkGeneratorRoot>
         <SdkGenerator>$(SdkGeneratorRoot)ServiceClientGenerator\bin\Release\ServiceClientGenerator.exe</SdkGenerator>
@@ -24,13 +26,23 @@
 
       -->
     <Target Name="generate-sdk-src">
-        <CallTarget Targets="clone-sdk;restore-sdk-generator;compile-sdk-generator;generate-raw-telemetry-client;copy-telemetry-client-code;cleanup"/>
+        <CallTarget Targets="clone-sdk;verify-sdk-commit;restore-sdk-generator;compile-sdk-generator;generate-raw-telemetry-client;copy-telemetry-client-code;cleanup"/>
     </Target>
 
     <!-- Produce a generated csproj and files in a temp location -->
     <Target Name="clone-sdk">
         <Message Text="Cloning AWS .NET SDK into $(DotNetSdkClone) (this will take a while)" />
         <Exec Command="git clone -c core.longpaths=true --depth 1 --branch $(DotNetSdkTag) https://github.com/aws/aws-sdk-net.git $(DotNetSdkClone)" />
+    </Target>
+
+    <!-- Verify the cloned commit SHA matches the expected pinned value to prevent tag mutation attacks -->
+    <Target Name="verify-sdk-commit">
+        <Exec Command="git -C $(DotNetSdkClone) rev-parse HEAD" ConsoleToMSBuild="true">
+            <Output TaskParameter="ConsoleOutput" PropertyName="ClonedCommitSha" />
+        </Exec>
+        <Error Condition="'$(ClonedCommitSha)' != '$(DotNetSdkCommitSha)'"
+               Text="Supply chain integrity check failed: cloned commit $(ClonedCommitSha) does not match expected SHA $(DotNetSdkCommitSha) for tag $(DotNetSdkTag). The tag may have been tampered with." />
+        <Message Text="Verified cloned commit SHA: $(ClonedCommitSha)" />
     </Target>
 
     <Target Name="restore-sdk-generator">
