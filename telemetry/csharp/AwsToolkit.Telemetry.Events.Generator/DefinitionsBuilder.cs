@@ -209,8 +209,9 @@ namespace Amazon.AwsToolkit.Telemetry.Events.Generator
                 .ForEach(allowedValue =>
             {
                 // eg: public static readonly Runtime Dotnetcore21 = new Runtime("dotnetcore2.1")
+                var sanitizedFieldName = allowedValue.Replace(" ", "_").ToPascalCase().ToSafeIdentifier();
                 CodeMemberField field = new CodeMemberField($"readonly {type.GetGeneratedTypeName()}",
-                    allowedValue.Replace(" ", "_").ToPascalCase().Replace(".", "").Replace("-", ""))
+                    sanitizedFieldName)
                 {
                     InitExpression = new CodeObjectCreateExpression(type.GetGeneratedTypeName(),
                         new CodeExpression[] {new CodePrimitiveExpression(allowedValue)}),
@@ -292,7 +293,7 @@ namespace Amazon.AwsToolkit.Telemetry.Events.Generator
                 .ToList().ForEach(metadata =>
                 {
                     var metricType = GetMetricType(metadata.type);
-                    var fieldName = metadata.type.ToPascalCase();
+                    var fieldName = metadata.type.ToPascalCase().ToSafeIdentifier();
 
                     var generatedTypeName = metricType.GetGeneratedTypeName();
 
@@ -322,7 +323,7 @@ namespace Amazon.AwsToolkit.Telemetry.Events.Generator
         private CodeExpression GetMetricUnitExpression(Metric metric)
         {
             var unit = metric.unit ?? "None"; // Fall back to "Unit.None" if there is no metric unit provided
-            return new CodeFieldReferenceExpression(new CodeTypeReferenceExpression("Unit"), unit.ToPascalCase());
+            return new CodeFieldReferenceExpression(new CodeTypeReferenceExpression("Unit"), unit.ToPascalCase().ToSafeIdentifier());
         }
 
         /// <summary>
@@ -552,7 +553,7 @@ namespace Amazon.AwsToolkit.Telemetry.Events.Generator
                 name
                     .Split(new char[] {'.', ',', '_', '-'}, StringSplitOptions.RemoveEmptyEntries)
                     .Select(x => x.ToPascalCase())
-            );
+            ).ToSafeIdentifier();
         }
     }
 }

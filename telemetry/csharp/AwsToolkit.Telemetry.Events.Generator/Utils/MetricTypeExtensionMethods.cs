@@ -44,7 +44,7 @@ namespace Amazon.AwsToolkit.Telemetry.Events.Generator.Utils
                 typeName = type.GetAliasedType().FullName;
             }
 
-            return typeName.ToPascalCase();
+            return typeName.ToPascalCase().ToSafeIdentifier();
         }
     }
 }
