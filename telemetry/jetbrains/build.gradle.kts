@@ -3,23 +3,26 @@ import org.everit.json.schema.loader.SchemaLoader
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.json.JSONObject
 
-val jacksonVersion = "2.14.1"
+val jacksonVersion = "2.15.2"
 val junitVersion = "4.13.2"
-val kotlinVersion = "1.3.20"
-val assertjVersion = "3.24.2"
+val kotlinVersion = "2.4.21"
+val assertjVersion = "3.27.7"
+val javaVersion = JavaVersion.VERSION_25
 
 plugins {
     java
     `kotlin-dsl`
-    kotlin("jvm") version "1.8.0"
+    kotlin("jvm") version "2.4.21"
     `maven-publish`
     signing
-    id("io.github.gradle-nexus.publish-plugin") version "1.1.0"
+    id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
 }
 
 java {
     withJavadocJar()
     withSourcesJar()
+    sourceCompatibility = javaVersion
+    targetCompatibility = javaVersion
 }
 
 buildscript {
@@ -28,8 +31,8 @@ buildscript {
         gradlePluginPortal()
     }
     dependencies {
-        classpath("com.github.erosb:everit-json-schema:1.14.1")
-        classpath(kotlin("gradle-plugin", version = "1.3.20"))
+        classpath("com.github.erosb:everit-json-schema:1.14.6")
+        classpath(kotlin("gradle-plugin", version = "2.4.21"))
     }
 }
 
@@ -43,7 +46,7 @@ dependencies {
     implementation(kotlin("stdlib-jdk8"))
     implementation("com.squareup:kotlinpoet:1.13.2")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:$jacksonVersion")
-    implementation("com.github.erosb:everit-json-schema:1.12.2")
+    implementation("com.github.erosb:everit-json-schema:1.14.6")
     testImplementation("junit:junit:$junitVersion")
     testImplementation("org.assertj:assertj-core:$assertjVersion")
 }
@@ -51,11 +54,11 @@ dependencies {
 tasks {
     compileKotlin {
         dependsOn(":copyTelemetryResources", ":validatePackagedSchema")
-        kotlinOptions.jvmTarget = "1.8"
+        compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25)
     }
     compileTestKotlin {
         dependsOn(":copyTestTelemetryResources")
-        kotlinOptions.jvmTarget = "1.8"
+        compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25)
     }
     register("validatePackagedSchema") {
         group = "build"
@@ -74,15 +77,24 @@ tasks {
             }
         }
     }
-    task(name = "copyTelemetryResources", type = Copy::class) {
+    register<Copy>("copyTelemetryResources") {
         from("..")
         include("*.json", "definitions/*.json")
         into("src/main/resources/")
     }
-    task(name = "copyTestTelemetryResources", type = Copy::class) {
+    register<Copy>("copyTestTelemetryResources") {
         from("..")
         include("*.json", "definitions/*.json")
         into("src/test/resources/")
+    }
+    processResources {
+        dependsOn("copyTelemetryResources")
+    }
+    processTestResources {
+        dependsOn("copyTestTelemetryResources")
+    }
+    named("sourcesJar") {
+        dependsOn("copyTelemetryResources")
     }
 }
 

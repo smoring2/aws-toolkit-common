@@ -76,7 +76,7 @@ data class MetricSchema(
     val passive: Boolean = false
 )
 
-fun MetricSchema.namespace() = name.split('_').first().toLowerCase()
+fun MetricSchema.namespace() = name.split('_').first().lowercase()
 
 data class MetadataSchema(
     val type: TelemetryMetricType,
