@@ -6,12 +6,17 @@ package software.aws.toolkits.telemetry.generator.gradle
 import org.gradle.api.DefaultTask
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
+import org.gradle.work.DisableCachingByDefault
 import software.aws.toolkits.telemetry.generator.generateTelemetryFromFiles
 import java.io.File
 
+@DisableCachingByDefault(because = "Telemetry generation is fast and not worth caching")
 open class GenerateTelemetry : DefaultTask() {
     @InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
     lateinit var inputFiles: List<File>
 
     @OutputDirectory
