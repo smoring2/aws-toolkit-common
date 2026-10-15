@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { argv } from 'yargs'
+import yargs = require('yargs')
+import { hideBin } from 'yargs/helpers'
 import * as path from 'path'
 import * as _ from 'lodash'
 import { CommandLineArguments } from './parser'
@@ -12,7 +13,7 @@ import { generate } from './generate'
 async function parseArguments(): Promise<CommandLineArguments> {
     let input: string[] = []
 
-    const args = await argv 
+    const args = await yargs(hideBin(process.argv)).argv
 
     if (!args.output) {
         throw new TypeError(`Argument 'output' required`)
