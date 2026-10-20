@@ -1,25 +1,26 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
-		<TargetFramework>net472</TargetFramework>
+		<TargetFramework>net10.0</TargetFramework>
 		<RootNamespace>Amazon.AwsToolkit.Telemetry.Events.Tests</RootNamespace>
 		<Optimize>false</Optimize>
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 		<OutputType>Library</OutputType>
 	</PropertyGroup>
-	<ItemGroup>
-		<Reference Include="System" />
-		<Reference Include="System.Core" />
-	</ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Moq" Version="4.18.4" />
-    <PackageReference Include="xunit" Version="2.6.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.5">
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+    <PackageReference Include="Moq" Version="4.21.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\AwsToolkit.Telemetry.Events\AwsToolkit.Telemetry.Events.csproj" />
+    <!-- Declares the build-order dependency on the code generator invoked by the GenerateTelemetryCode
+         target below. ReferenceOutputAssembly=false because the generator is a tool, not a library. -->
+    <ProjectReference Include="..\AwsToolkit.Telemetry.Events.Generator\AwsToolkit.Telemetry.Events.Generator.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Generated\" />
@@ -29,7 +30,27 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
-    <Exec Command="rem BUILD THE GENERATOR, THEN USE IT TO GENERATE CODE INTO THE TEST PROJECT&#xD;&#xA;dotnet build &quot;$(SolutionDir)\AwsToolkit.Telemetry.Events.Generator\AwsToolkit.Telemetry.Events.Generator.csproj&quot;&#xD;&#xA;dotnet run --project &quot;$(SolutionDir)\AwsToolkit.Telemetry.Events.Generator\AwsToolkit.Telemetry.Events.Generator.csproj&quot; -o $(ProjectDir)\Generated&#xD;&#xA;dotnet run --project &quot;$(SolutionDir)\AwsToolkit.Telemetry.Events.Generator\AwsToolkit.Telemetry.Events.Generator.csproj&quot; -o $(ProjectDir)\Generated --namespace Amazon.AwsToolkit.Telemetry.Events.Tests.Generated --s supplementDefinitions.json --f SupplementalCode.cs&#xD;&#xA;" />
+
+  <!-- BUILD THE GENERATOR, THEN USE IT TO GENERATE CODE INTO THE TEST PROJECT.
+       Paths are anchored on $(MSBuildThisFileDirectory) rather than $(SolutionDir) so the project
+       builds correctly outside AwsToolkit.Telemetry.sln (it is also part of the SDK solution graph).
+       Set SkipTelemetryCodeGeneration=true to build against the committed Generated/ sources. -->
+  <PropertyGroup>
+    <TelemetryGeneratorProject>$(MSBuildThisFileDirectory)..\AwsToolkit.Telemetry.Events.Generator\AwsToolkit.Telemetry.Events.Generator.csproj</TelemetryGeneratorProject>
+    <TelemetryGeneratedDir>$(MSBuildThisFileDirectory)Generated</TelemetryGeneratedDir>
+  </PropertyGroup>
+  <Target Name="GenerateTelemetryCode" BeforeTargets="PreBuildEvent"
+          Condition="'$(SkipTelemetryCodeGeneration)' != 'true' AND '$(DesignTimeBuild)' != 'true'">
+    <Exec Command="dotnet build &quot;$(TelemetryGeneratorProject)&quot;" />
+    <Exec Command="dotnet run --no-build --project &quot;$(TelemetryGeneratorProject)&quot; -o &quot;$(TelemetryGeneratedDir)&quot;" />
+    <Exec Command="dotnet run --no-build --project &quot;$(TelemetryGeneratorProject)&quot; -o &quot;$(TelemetryGeneratedDir)&quot; --namespace Amazon.AwsToolkit.Telemetry.Events.Tests.Generated --s supplementDefinitions.json --f SupplementalCode.cs"
+          WorkingDirectory="$(MSBuildThisFileDirectory)" />
+    <!-- The SDK evaluates the **/*.cs Compile glob at project-load time, BEFORE this target runs, so
+         files generated above are missing from @(Compile) on any build where they did not already
+         exist on disk (fresh clone before generation, or after cleaning Generated/). Add them here —
+         Exclude="@(Compile)" keeps already-globbed files from being included twice (CS2002). -->
+    <ItemGroup>
+      <Compile Include="$(TelemetryGeneratedDir)/*.cs" Exclude="@(Compile)" />
+    </ItemGroup>
   </Target>
 </Project>
