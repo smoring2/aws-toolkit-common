@@ -45,5 +45,12 @@
     <Exec Command="dotnet run --no-build --project &quot;$(TelemetryGeneratorProject)&quot; -o &quot;$(TelemetryGeneratedDir)&quot;" />
     <Exec Command="dotnet run --no-build --project &quot;$(TelemetryGeneratorProject)&quot; -o &quot;$(TelemetryGeneratedDir)&quot; --namespace Amazon.AwsToolkit.Telemetry.Events.Tests.Generated --s supplementDefinitions.json --f SupplementalCode.cs"
           WorkingDirectory="$(MSBuildThisFileDirectory)" />
+    <!-- The SDK evaluates the **/*.cs Compile glob at project-load time, BEFORE this target runs, so
+         files generated above are missing from @(Compile) on any build where they did not already
+         exist on disk (fresh clone before generation, or after cleaning Generated/). Add them here —
+         Exclude="@(Compile)" keeps already-globbed files from being included twice (CS2002). -->
+    <ItemGroup>
+      <Compile Include="$(TelemetryGeneratedDir)/*.cs" Exclude="@(Compile)" />
+    </ItemGroup>
   </Target>
 </Project>
