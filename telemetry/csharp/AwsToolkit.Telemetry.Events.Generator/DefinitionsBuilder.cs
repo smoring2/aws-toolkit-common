@@ -6,6 +6,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Amazon.AwsToolkit.Telemetry.Events.Generator.Models;
 using Amazon.AwsToolkit.Telemetry.Events.Generator.Utils;
 
@@ -34,6 +35,17 @@ namespace Amazon.AwsToolkit.Telemetry.Events.Generator
             "duration",
             "locale"
         };
+
+        /// <summary>
+        /// Pattern for validating safe identifier names used in generated code.
+        /// Metric names must be lowercase start with underscore-separated segments.
+        /// </summary>
+        private static readonly Regex MetricNamePattern = new Regex(@"^[a-z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)+$");
+
+        /// <summary>
+        /// Pattern for validating safe type names used in generated code.
+        /// </summary>
+        private static readonly Regex TypeNamePattern = new Regex(@"^[a-zA-Z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)*$");
 
         private readonly CodeMethodReferenceExpression _invariantCulture =
             new CodeMethodReferenceExpression(new CodeTypeReferenceExpression(typeof(CultureInfo)),
@@ -176,7 +188,10 @@ namespace Amazon.AwsToolkit.Telemetry.Events.Generator
         /// </summary>
         private CodeTypeDeclaration GenerateEnumStruct(MetricType type)
         {
-            var typeDeclaration = new CodeTypeDeclaration(type.GetGeneratedTypeName())
+            var generatedTypeName = type.GetGeneratedTypeName();
+            ValidateGeneratedTypeName(generatedTypeName, $"type '{type.name}'");
+
+            var typeDeclaration = new CodeTypeDeclaration(generatedTypeName)
             {
                 IsStruct = true,
                 TypeAttributes = TypeAttributes.Public | TypeAttributes.Sealed
@@ -208,11 +223,13 @@ namespace Amazon.AwsToolkit.Telemetry.Events.Generator
                 .ToList()
                 .ForEach(allowedValue =>
             {
+                var fieldName = allowedValue.Replace(" ", "_").ToPascalCase().Replace(".", "").Replace("-", "");
+                ValidateGeneratedIdentifier(fieldName, $"allowed value '{allowedValue}' in type '{type.name}'");
+
                 // eg: public static readonly Runtime Dotnetcore21 = new Runtime("dotnetcore2.1")
-                CodeMemberField field = new CodeMemberField($"readonly {type.GetGeneratedTypeName()}",
-                    allowedValue.Replace(" ", "_").ToPascalCase().Replace(".", "").Replace("-", ""))
+                CodeMemberField field = new CodeMemberField($"readonly {generatedTypeName}", fieldName)
                 {
-                    InitExpression = new CodeObjectCreateExpression(type.GetGeneratedTypeName(),
+                    InitExpression = new CodeObjectCreateExpression(generatedTypeName,
                         new CodeExpression[] {new CodePrimitiveExpression(allowedValue)}),
                     Attributes = MemberAttributes.Static | MemberAttributes.Public
                 };
@@ -262,10 +279,13 @@ namespace Amazon.AwsToolkit.Telemetry.Events.Generator
         /// </summary>
         private CodeTypeDeclaration CreateMetricDataClass(Metric metric)
         {
+            var sanitizedName = SanitizeName(metric.name);
+            ValidateGeneratedIdentifier(sanitizedName, $"metric '{metric.name}'");
+
             var cls = new CodeTypeDeclaration
             {
                 IsClass = true,
-                Name = SanitizeName(metric.name),
+                Name = sanitizedName,
                 TypeAttributes = TypeAttributes.Public | TypeAttributes.Sealed
             };
 
@@ -295,6 +315,7 @@ namespace Amazon.AwsToolkit.Telemetry.Events.Generator
                     var fieldName = metadata.type.ToPascalCase();
 
                     var generatedTypeName = metricType.GetGeneratedTypeName();
+                    ValidateGeneratedTypeName(generatedTypeName, $"metadata type '{metadata.type}' in metric '{metric.name}'");
 
                     if (IsNullable(metadata))
                     {
@@ -330,10 +351,13 @@ namespace Amazon.AwsToolkit.Telemetry.Events.Generator
         /// </summary>
         private CodeMemberMethod CreateRecordMetricMethodByDataClass(Metric metric)
         {
+            var sanitizedName = SanitizeName(metric.name);
+            ValidateGeneratedIdentifier(sanitizedName, $"metric '{metric.name}'");
+
             CodeMemberMethod recordMethod = new CodeMemberMethod
             {
                 Attributes = MemberAttributes.Public | MemberAttributes.Static,
-                Name = $"Record{SanitizeName(metric.name)}",
+                Name = $"Record{sanitizedName}",
                 ReturnType = new CodeTypeReference()
             };
 
@@ -346,7 +370,7 @@ namespace Amazon.AwsToolkit.Telemetry.Events.Generator
             // RecordXxx Parameters
             var telemetryLogger = new CodeParameterDeclarationExpression("this ITelemetryLogger", "telemetryLogger");
             recordMethod.Parameters.Add(telemetryLogger);
-            recordMethod.Parameters.Add(new CodeParameterDeclarationExpression(SanitizeName(metric.name), "payload"));
+            recordMethod.Parameters.Add(new CodeParameterDeclarationExpression(sanitizedName, "payload"));
             recordMethod.Parameters.Add(new CodeParameterDeclarationExpression("Func<MetricDatum, MetricDatum>", "transformDatum = null"));
 
             // Generate method body
@@ -553,6 +577,59 @@ namespace Amazon.AwsToolkit.Telemetry.Events.Generator
                     .Split(new char[] {'.', ',', '_', '-'}, StringSplitOptions.RemoveEmptyEntries)
                     .Select(x => x.ToPascalCase())
             );
+        }
+
+        /// <summary>
+        /// Validates that a generated type name is a safe language-independent identifier.
+        /// This prevents code injection through type references that CodeDom emits verbatim.
+        /// The "readonly " prefix pattern used by this generator for static fields is also allowed.
+        /// </summary>
+        private static void ValidateGeneratedTypeName(string typeName, string context)
+        {
+            // The generator uses $"readonly {typeName}" as a field type to smuggle the readonly keyword.
+            // For that pattern, validate just the type portion. For everything else, validate directly.
+            var nameToValidate = typeName;
+            if (typeName.StartsWith("readonly "))
+            {
+                nameToValidate = typeName.Substring("readonly ".Length);
+            }
+
+            // Also handle nullable suffix
+            var baseTypeName = nameToValidate.TrimEnd('?');
+
+            // Allow fully-qualified .NET type names (e.g., System.String, System.Int32)
+            // and simple PascalCase identifiers
+            if (!CodeGenerator.IsValidLanguageIndependentIdentifier(baseTypeName) 
+                && !IsValidQualifiedTypeName(baseTypeName))
+            {
+                throw new ArgumentException(
+                    $"Invalid generated type name '{typeName}' for {context}. " +
+                    "Type names must be valid language-independent identifiers to prevent code injection.");
+            }
+        }
+
+        /// <summary>
+        /// Validates that a generated identifier name is safe for use in generated code.
+        /// </summary>
+        private static void ValidateGeneratedIdentifier(string identifier, string context)
+        {
+            if (!CodeGenerator.IsValidLanguageIndependentIdentifier(identifier))
+            {
+                throw new ArgumentException(
+                    $"Invalid generated identifier '{identifier}' for {context}. " +
+                    "Identifiers must be valid language-independent identifiers to prevent code injection.");
+            }
+        }
+
+        /// <summary>
+        /// Checks if a string is a valid dot-separated qualified type name (e.g., System.String).
+        /// Each segment must be a valid identifier.
+        /// </summary>
+        private static bool IsValidQualifiedTypeName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            var parts = name.Split('.');
+            return parts.All(part => CodeGenerator.IsValidLanguageIndependentIdentifier(part));
         }
     }
 }
