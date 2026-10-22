@@ -13,22 +13,26 @@
                     "name": {
                         "type": "string",
                         "description": "The name of the metadata type",
-                        "pattern": "^(?!value|project|createTime).*"
+                        "pattern": "^(?!value$|project$|createTime$)[a-zA-Z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)*$",
+                        "maxLength": 128
                     },
                     "type": {
                         "enum": ["int", "double", "string", "boolean"]
                     },
                     "description": {
-                        "type": "string"
+                        "type": "string",
+                        "pattern": "^[^\\\\]*$",
+                        "maxLength": 1024
                     },
                     "allowedValues": {
                         "oneOf": [
                             { "type": "array", "items": { "type": "number" } },
-                            { "type": "array", "items": { "type": "string" } }
+                            { "type": "array", "items": { "type": "string", "pattern": "^[a-zA-Z0-9 ,._-]*$", "maxLength": 128 } }
                         ]
                     }
                 },
-                "required": ["name", "description"]
+                "required": ["name", "description"],
+                "additionalProperties": false
             }
         },
         "metrics": {
@@ -39,10 +43,13 @@
                     "name": {
                         "type": "string",
                         "description": "The name of the metadata type",
-                        "pattern": "^.*_.*$"
+                        "pattern": "^[a-z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)+$",
+                        "maxLength": 128
                     },
                     "description": {
-                        "type": "string"
+                        "type": "string",
+                        "pattern": "^[^\\\\]*$",
+                        "maxLength": 1024
                     },
                     "unit": {
                         "enum": ["Milliseconds", "Bytes", "Percent", "Count", "None"]
@@ -59,7 +66,8 @@
                                     "type": "boolean"
                                 }
                             },
-                            "required": ["type"]
+                            "required": ["type"],
+                            "additionalProperties": false
                         }
                     },
                     "passive": {
@@ -67,9 +75,11 @@
                         "description": "Set as true if the metric is emitted without any explicit user action."
                     }
                 },
-                "required": ["name", "description"]
+                "required": ["name", "description"],
+                "additionalProperties": false
             }
         }
     },
-    "required": ["metrics"]
+    "required": ["metrics"],
+    "additionalProperties": false
 }

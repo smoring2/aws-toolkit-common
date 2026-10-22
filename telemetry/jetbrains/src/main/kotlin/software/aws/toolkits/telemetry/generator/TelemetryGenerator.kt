@@ -29,10 +29,52 @@ val CONNECTION_SETTINGS = ClassName("software.aws.toolkits.core", "ConnectionSet
 const val RESULT = "result"
 const val SUCCESS = "success"
 
+/**
+ * Pattern that metric names must match to prevent code injection.
+ * Metric names must be lowercase-start, alphanumeric, with at least one underscore separator.
+ */
+private val METRIC_NAME_PATTERN = Regex("^[a-z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)+$")
+
+/**
+ * Pattern that type names must match to prevent code injection.
+ */
+private val TYPE_NAME_PATTERN = Regex("^[a-zA-Z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)*$")
+
 fun String.filterInvalidCharacters() = this.replace(".", "")
 fun String.toTypeFormat() = this.filterInvalidCharacters().split("_", "-").joinToString(separator = "") { it.capitalize() }
 
 fun String.toArgumentFormat() = this.toTypeFormat().decapitalize()
+
+/**
+ * Sanitizes a string for safe use in KDoc comments.
+ * Removes sequences that could terminate a KDoc block or be interpreted as KotlinPoet format specifiers.
+ */
+fun String.sanitizeKdoc(): String = this
+    .replace("*/", "")
+    .replace("%", "%%")
+
+/**
+ * Validates that a metric name matches the safe identifier pattern.
+ * Throws if the name could be used for code injection.
+ */
+fun validateMetricName(name: String) {
+    require(METRIC_NAME_PATTERN.matches(name)) {
+        "Invalid metric name '$name': must match $METRIC_NAME_PATTERN. " +
+            "Metric names must start with a lowercase letter, contain only alphanumeric characters and underscores, " +
+            "and have at least two underscore-separated segments."
+    }
+}
+
+/**
+ * Validates that a type name matches the safe identifier pattern.
+ * Throws if the name could be used for code injection.
+ */
+fun validateTypeName(name: String) {
+    require(TYPE_NAME_PATTERN.matches(name)) {
+        "Invalid type name '$name': must match $TYPE_NAME_PATTERN. " +
+            "Type names must start with a letter and contain only alphanumeric characters."
+    }
+}
 
 fun generateTelemetryFromFiles(
     inputFiles: List<File>,
@@ -40,6 +82,11 @@ fun generateTelemetryFromFiles(
     outputFolder: File
 ) {
     val telemetry = TelemetryParser.parseFiles(defaultDefinitions, inputFiles)
+
+    // Validate all names before generation to prevent code injection
+    telemetry.types.forEach { validateTypeName(it.name) }
+    telemetry.metrics.forEach { validateMetricName(it.name) }
+
     // make sure the output directory exists before writing to it
     outputFolder.mkdirs()
     FileSpec.builder(PACKAGE_NAME, "TelemetryDefinitions")
@@ -81,7 +128,7 @@ private fun FileSpec.Builder.generateTelemetryEnumType(item: TelemetryMetricType
         )
         .addProperty(PropertySpec.builder("value", String::class, KModifier.PRIVATE).initializer("value").build())
         .addFunction(FunSpec.builder("toString").addModifiers(KModifier.OVERRIDE).returns(String::class).addStatement("return value").build())
-        .addKdoc(item.description)
+        .addKdoc("%L", item.description.sanitizeKdoc())
 
     item.allowedValues!!.forEach { enumValue ->
         enum.addEnumConstant(
@@ -178,7 +225,7 @@ private fun buildRecordFunction(metadataProvider: ParameterSpec, functionName: S
     functionParameters.addAll(buildMetricParameters(metric))
 
     return FunSpec.builder(functionName)
-        .addKdoc(metric.description)
+        .addKdoc("%L", metric.description.sanitizeKdoc())
         .addParameters(functionParameters)
         .generateFunctionBody(metadataProvider, metric)
         .build()
@@ -258,7 +305,7 @@ fun buildResultOverloadFunction(metadataProvider: ParameterSpec, functionName: S
     functionParameters.addAll(overloadedParameters)
 
     return FunSpec.builder(functionName)
-        .addKdoc(metric.description)
+        .addKdoc("%L", metric.description.sanitizeKdoc())
         .addParameters(functionParameters)
         .generateResultOverloadFunctionBody(functionName, functionParameters)
         .build()

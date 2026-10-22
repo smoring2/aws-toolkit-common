@@ -27,6 +27,62 @@ import {
     validateInput,
 } from './parser'
 
+/**
+ * Pattern that metric names must match: lowercase start, alphanumeric segments separated by underscores.
+ * This prevents code injection through metric names used in generated source text.
+ */
+const METRIC_NAME_PATTERN = /^[a-z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)+$/
+
+/**
+ * Pattern that type names must match: alphanumeric identifier, optionally with underscores.
+ * This prevents code injection through type names used in generated source text.
+ */
+const TYPE_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)*$/
+
+/**
+ * Pattern that allowed values must match: safe characters only.
+ */
+const ALLOWED_VALUE_PATTERN = /^[a-zA-Z0-9 ,._-]*$/
+
+/**
+ * Validates that a metric name matches the safe identifier pattern.
+ * Throws if the name could be used for code injection.
+ */
+function validateMetricName(name: string): void {
+    if (!METRIC_NAME_PATTERN.test(name)) {
+        throw new Error(
+            `Invalid metric name ${JSON.stringify(name)}: must match ${METRIC_NAME_PATTERN}. ` +
+            `Metric names must start with a lowercase letter, contain only alphanumeric characters and underscores, ` +
+            `and have at least two underscore-separated segments.`
+        )
+    }
+}
+
+/**
+ * Validates that a type name matches the safe identifier pattern.
+ * Throws if the name could be used for code injection.
+ */
+function validateTypeName(name: string): void {
+    if (!TYPE_NAME_PATTERN.test(name)) {
+        throw new Error(
+            `Invalid type name ${JSON.stringify(name)}: must match ${TYPE_NAME_PATTERN}. ` +
+            `Type names must start with a letter and contain only alphanumeric characters and underscores.`
+        )
+    }
+}
+
+/**
+ * Validates that an allowed value contains only safe characters.
+ */
+function validateAllowedValue(value: string | number): void {
+    if (typeof value === 'string' && !ALLOWED_VALUE_PATTERN.test(value)) {
+        throw new Error(
+            `Invalid allowed value ${JSON.stringify(value)}: must match ${ALLOWED_VALUE_PATTERN}. ` +
+            `Allowed values must contain only alphanumeric characters, spaces, commas, dots, underscores, and hyphens.`
+        )
+    }
+}
+
 function toTitleCase(s: string): string {
     return s.replace(s[0], s[0].toUpperCase())
 }
@@ -61,6 +117,17 @@ export async function generate(args: CommandLineArguments) {
         metrics: _.uniqBy(rawDefinitions.metrics, 'name'),
     }
 
+    // Validate all names and values before generation to prevent code injection
+    input.types?.forEach(t => {
+        validateTypeName(t.name)
+        if (t.allowedValues) {
+            t.allowedValues.forEach(v => validateAllowedValue(v))
+        }
+    })
+    input.metrics.forEach(m => {
+        validateMetricName(m.name)
+    })
+
     const output = generateFile(input, args.outputFile)
     const options = await prettier.resolveConfig(await readFile(`${__dirname}/../.prettierrc`, 'utf-8'))
     const formattedOutput = prettier.format(output.getFullText(), { parser: 'typescript', ...options })
@@ -81,7 +148,7 @@ function getArgsFromMetadata(m: MetadataType): string {
                 name,
                 kind: StructureKind.TypeAlias,
                 isExported: true,
-                type: m.allowedValues.map(v => `'${v}'`).join(' | '),
+                type: m.allowedValues.map(v => JSON.stringify(String(v))).join(' | '),
             })
         }
 
@@ -129,7 +196,7 @@ const value: PropertySignatureStructure = {
     hasQuestionToken: true,
     name: 'value',
     type: 'number',
-    docs: ['@deprecated Arbitrary "value" of the metric.'],
+    docs: ['@deprecated Arbitrary \"value\" of the metric.'],
     kind: StructureKind.PropertySignature,
 }
 
@@ -269,7 +336,7 @@ function generateTelemetryHelper(recorder: InterfaceDeclarationStructure, metric
                 name: m.name,
                 docs: [m.description],
                 returnType: `${recorder.name}<${metricToTypeName(m)}>`,
-                statements: `return this.${getMetric.name}('${m.name}')`,
+                statements: `return this.${getMetric.name}(${JSON.stringify(m.name)})`,
             }
         }),
         isExported: true,
@@ -284,7 +351,7 @@ function generateMetricShapeMap(metrics: Metric[]): InterfaceDeclarationStructur
         properties: metrics.map(m => {
             return {
                 isReadonly: true,
-                name: `'${m.name}'`,
+                name: JSON.stringify(m.name),
                 type: metricToTypeName(m),
             }
         }),
@@ -293,10 +360,10 @@ function generateMetricShapeMap(metrics: Metric[]): InterfaceDeclarationStructur
 
 function generateDefinitions(metrics: Metric[]): VariableStatementStructure {
     const fields = metrics.map(m => {
-        const metadataTypes = getMetricMetadata(m).filter(m => m.required ?? true).map(m => `'${m.type}'`)
+        const metadataTypes = getMetricMetadata(m).filter(m => m.required ?? true).map(m => JSON.stringify(m.type))
         const requiredMetadata = `[${metadataTypes.join(', ')}]`
         
-        return `${m.name}: { unit: '${m.unit ?? 'None'}', passive: ${m.passive ?? false}, requiredMetadata: ${requiredMetadata} }`
+        return `${JSON.stringify(m.name)}: { unit: ${JSON.stringify(m.unit ?? 'None')}, passive: ${m.passive ?? false}, requiredMetadata: ${requiredMetadata} }`
     })
 
     return {
