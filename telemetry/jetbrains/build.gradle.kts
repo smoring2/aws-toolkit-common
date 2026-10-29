@@ -1,23 +1,27 @@
 import org.everit.json.schema.Schema
 import org.everit.json.schema.loader.SchemaLoader
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.json.JSONObject
 
-val jacksonVersion = "2.14.1"
+val jacksonVersion = "2.15.2"
 val junitVersion = "4.13.2"
-val kotlinVersion = "1.3.20"
+val kotlinVersion = "2.0.20"
 val assertjVersion = "3.24.2"
 
 plugins {
     java
     `kotlin-dsl`
-    kotlin("jvm") version "1.8.0"
+    kotlin("jvm") version "2.0.20"
     `maven-publish`
     signing
     id("io.github.gradle-nexus.publish-plugin") version "1.1.0"
 }
 
 java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(17))
+    }
     withJavadocJar()
     withSourcesJar()
 }
@@ -29,7 +33,7 @@ buildscript {
     }
     dependencies {
         classpath("com.github.erosb:everit-json-schema:1.14.1")
-        classpath(kotlin("gradle-plugin", version = "1.3.20"))
+        classpath(kotlin("gradle-plugin", version = "2.0.20"))
     }
 }
 
@@ -40,10 +44,10 @@ repositories {
 group = "software.aws.toolkits"
 
 dependencies {
-    implementation(kotlin("stdlib-jdk8"))
+    implementation(kotlin("stdlib"))
     implementation("com.squareup:kotlinpoet:1.13.2")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:$jacksonVersion")
-    implementation("com.github.erosb:everit-json-schema:1.12.2")
+    implementation("com.github.erosb:everit-json-schema:1.14.1")
     testImplementation("junit:junit:$junitVersion")
     testImplementation("org.assertj:assertj-core:$assertjVersion")
 }
@@ -51,11 +55,20 @@ dependencies {
 tasks {
     compileKotlin {
         dependsOn(":copyTelemetryResources", ":validatePackagedSchema")
-        kotlinOptions.jvmTarget = "1.8"
+        compilerOptions.jvmTarget.set(JvmTarget.JVM_17)
     }
     compileTestKotlin {
         dependsOn(":copyTestTelemetryResources")
-        kotlinOptions.jvmTarget = "1.8"
+        compilerOptions.jvmTarget.set(JvmTarget.JVM_17)
+    }
+    processResources {
+        dependsOn(":copyTelemetryResources")
+    }
+    processTestResources {
+        dependsOn(":copyTestTelemetryResources")
+    }
+    withType<Jar> {
+        dependsOn(":copyTelemetryResources")
     }
     register("validatePackagedSchema") {
         group = "build"
