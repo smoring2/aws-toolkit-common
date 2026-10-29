@@ -30,9 +30,9 @@ const val RESULT = "result"
 const val SUCCESS = "success"
 
 fun String.filterInvalidCharacters() = this.replace(".", "")
-fun String.toTypeFormat() = this.filterInvalidCharacters().split("_", "-").joinToString(separator = "") { it.capitalize() }
+fun String.toTypeFormat() = this.filterInvalidCharacters().split("_", "-").joinToString(separator = "") { it.replaceFirstChar { c -> c.titlecaseChar() } }
 
-fun String.toArgumentFormat() = this.toTypeFormat().decapitalize()
+fun String.toArgumentFormat() = this.toTypeFormat().replaceFirstChar { c -> c.lowercaseChar() }
 
 fun generateTelemetryFromFiles(
     inputFiles: List<File>,
